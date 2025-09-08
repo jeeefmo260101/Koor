@@ -1,0 +1,2095 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Pendataan Lagu Liturgi Gereja Katolik</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .modal-backdrop {
+            backdrop-filter: blur(4px);
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .slide-up {
+            animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .pdf-viewer {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        .api-status {
+            transition: all 0.3s ease;
+        }
+        .api-status.connected {
+            background-color: #10b981;
+        }
+        .api-status.disconnected {
+            background-color: #ef4444;
+        }
+        .api-status.testing {
+            background-color: #f59e0b;
+        }
+        .api-status.cors-blocked {
+            background-color: #8b5cf6;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-lg border-b-4 border-blue-600">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="bg-blue-600 text-white p-3 rounded-full">
+                        <i class="fas fa-music text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-800">Sistem Liturgi Katolik</h1>
+                        <p class="text-gray-600">Database Lagu Misa & Partitur</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="text-right">
+                        <p class="text-sm text-gray-600">Status API</p>
+                        <p class="api-status px-3 py-1 rounded-full text-white text-sm font-semibold" id="apiStatus">
+                            <i class="fas fa-circle mr-1"></i> <span id="apiStatusText">Menguji...</span>
+                        </p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-600">Mode Data</p>
+                        <p class="text-green-600 font-semibold" id="dataMode">
+                            <i class="fas fa-table"></i> CSV Mode
+                        </p>
+                    </div>
+                    <button onclick="testAPIConnection()" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-plug"></i> Test API
+                    </button>
+                    <button onclick="reloadFromCSV()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-table"></i> Reload CSV
+                    </button>
+                    <button onclick="showTroubleshooting()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-tools"></i> Troubleshoot
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-6 py-8">
+        <!-- Controls -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+                <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
+                    <button onclick="openModal()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
+                        <i class="fas fa-plus mr-2"></i>Tambah Lagu Baru
+                    </button>
+                    <button onclick="exportData()" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
+                        <i class="fas fa-download mr-2"></i>Export Data
+                    </button>
+                    <button onclick="showHistory()" class="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
+                        <i class="fas fa-history mr-2"></i>Riwayat
+                    </button>
+                    <button onclick="reloadFromCSV()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
+                        <i class="fas fa-cloud-download-alt mr-2"></i>Muat dari CSV
+                    </button>
+                </div>
+                
+                <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 w-full md:w-auto">
+                    <select id="filterCategory" onchange="filterSongs()" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">Semua Kategori</option>
+                        <option value="Ordinarium">Ordinarium</option>
+                        <option value="Pembuka">Pembuka</option>
+                        <option value="Penutup">Penutup</option>
+                        <option value="Persembahan">Persembahan</option>
+                        <option value="Komuni">Komuni</option>
+                        <option value="Mazmur">Mazmur</option>
+                        <option value="Alleluia">Alleluia</option>
+                    </select>
+                    <select id="filterOrdinarium" onchange="filterSongs()" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">Semua Ordinarium</option>
+                        <option value="KYRIE">Kyrie</option>
+                        <option value="GLORIA">Gloria</option>
+                        <option value="SANCTUS">Sanctus</option>
+                        <option value="AGNUS DEI">Agnus Dei</option>
+                        <option value="PREFASI">Prefasi</option>
+                        <option value="ANAMNESES">Anamneses</option>
+                    </select>
+                    <input type="text" id="searchInput" placeholder="Cari lagu..." onkeyup="searchSongs()" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full sm:w-64">
+                </div>
+            </div>
+        </div>
+
+        <!-- Songs Table -->
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No. Lagu</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Judul Lagu</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jenis Ordinarium</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kategori Liturgi</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jenis Perayaan</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Versi Aransemen</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Partitur</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="songsTableBody" class="bg-white divide-y divide-gray-200">
+                        <!-- Data akan dimuat di sini -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex justify-between items-center mt-6">
+            <div class="text-sm text-gray-700">
+                Menampilkan <span id="showingStart">1</span> - <span id="showingEnd">10</span> dari <span id="totalSongs">0</span> lagu
+            </div>
+            <div class="flex space-x-2" id="pagination">
+                <!-- Pagination buttons akan dimuat di sini -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Form -->
+    <div id="songModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-screen overflow-y-auto slide-up">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex justify-between items-center">
+                        <h2 id="modalTitle" class="text-2xl font-bold text-gray-800">Tambah Lagu Baru</h2>
+                        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <form id="songForm" class="p-6 space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Nomor Lagu *</label>
+                            <input type="number" id="songNumber" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Contoh: 202">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Versi Aransemen</label>
+                            <input type="text" id="songVersion" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Contoh: SATB">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Prelude</label>
+                            <input type="text" id="songPrelude" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Info prelude">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Judul Lagu *</label>
+                        <input type="text" id="songTitle" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Masukkan judul lagu">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Jenis Ordinarium</label>
+                            <select id="songOrdinarium" onchange="updateCategoryFromOrdinarium()" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option value="">Bukan Ordinarium</option>
+                                <option value="KYRIE">Kyrie (Tuhan Kasihanilah Kami)</option>
+                                <option value="GLORIA">Gloria (Kemuliaan)</option>
+                                <option value="SANCTUS">Sanctus (Kudus)</option>
+                                <option value="AGNUS DEI">Agnus Dei (Anak Domba Allah)</option>
+                                <option value="PREFASI">Prefasi</option>
+                                <option value="ANAMNESES">Anamneses</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Kategori Liturgi *</label>
+                            <select id="songCategory" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option value="">Pilih Kategori</option>
+                                <option value="Ordinarium">Ordinarium</option>
+                                <option value="Pembuka">Pembuka</option>
+                                <option value="Penutup">Penutup</option>
+                                <option value="Persembahan">Persembahan</option>
+                                <option value="Komuni">Komuni</option>
+                                <option value="Mazmur">Mazmur</option>
+                                <option value="Alleluia">Alleluia</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Jenis Perayaan</label>
+                            <input type="text" id="songCelebration" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Contoh: Advent, Prapaskah">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Mazmur SATB</label>
+                            <input type="text" id="songSATB" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Info SATB">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Upload Partitur (PDF)</label>
+                        <div class="space-y-3">
+                            <input type="file" id="songPDF" accept=".pdf" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <div id="currentPDF" class="hidden">
+                                <p class="text-sm text-gray-600 mb-2">Partitur saat ini:</p>
+                                <div class="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                                    <div class="flex items-center space-x-2">
+                                        <i class="fas fa-file-pdf text-red-500"></i>
+                                        <span id="currentPDFName" class="text-sm font-medium"></span>
+                                    </div>
+                                    <div class="flex space-x-2">
+                                        <button type="button" onclick="viewPDF()" class="text-blue-600 hover:text-blue-800 text-sm">
+                                            <i class="fas fa-eye mr-1"></i>Lihat
+                                        </button>
+                                        <button type="button" onclick="removePDF()" class="text-red-600 hover:text-red-800 text-sm">
+                                            <i class="fas fa-trash mr-1"></i>Hapus
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                        <select id="songStatus" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="active">Aktif</option>
+                            <option value="inactive">Tidak Aktif</option>
+                        </select>
+                    </div>
+
+                    <div class="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                        <button type="button" onclick="closeModal()" class="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+                            Batal
+                        </button>
+                        <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                            <i class="fas fa-save mr-2"></i>Simpan
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="historyModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-screen overflow-y-auto slide-up">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl font-bold text-gray-800">Riwayat Aktivitas</h2>
+                        <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-gray-600 text-2xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="p-6">
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Waktu</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aktivitas</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Kategori</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody" class="divide-y divide-gray-200">
+                                <!-- History data akan dimuat di sini -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 flex items-center space-x-4">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span class="text-gray-700">Memproses...</span>
+        </div>
+    </div>
+
+    <!-- PDF Viewer Modal -->
+    <div id="pdfModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-screen overflow-hidden slide-up">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex justify-between items-center">
+                        <h2 id="pdfModalTitle" class="text-2xl font-bold text-gray-800">Partitur</h2>
+                        <div class="flex items-center space-x-4">
+                            <button onclick="downloadCurrentPDF()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                                <i class="fas fa-download mr-1"></i>Download
+                            </button>
+                            <button onclick="closePDFModal()" class="text-gray-400 hover:text-gray-600 text-2xl">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="p-6">
+                    <div id="pdfViewerContainer" class="w-full h-96 md:h-[600px] border border-gray-300 rounded-lg overflow-hidden">
+                        <iframe id="pdfViewer" class="w-full h-full" frameborder="0"></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Troubleshooting Modal -->
+    <div id="troubleshootModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-screen overflow-y-auto slide-up">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl font-bold text-gray-800">Troubleshooting & Diagnostik CORS</h2>
+                        <button onclick="closeTroubleshootModal()" class="text-gray-400 hover:text-gray-600 text-2xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="p-6 space-y-6">
+                    <!-- CORS Explanation -->
+                    <div class="bg-purple-50 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold mb-3 text-purple-800">🔒 Penjelasan Masalah CORS</h3>
+                        <div class="text-sm text-purple-700 space-y-2">
+                            <p><strong>Masalah:</strong> Google Apps Script API diblokir oleh CORS policy di environment Canva.</p>
+                            <p><strong>Penyebab:</strong> Browser memblokir request dari domain <code>canva-hosted-embed.com</code> ke <code>script.google.com</code></p>
+                            <p><strong>Solusi:</strong> Sistem otomatis menggunakan CSV Google Sheets sebagai sumber data alternatif.</p>
+                        </div>
+                    </div>
+
+                    <!-- Current Status -->
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold mb-3 text-blue-800">📊 Status Sistem Saat Ini</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <p class="text-gray-600">Environment:</p>
+                                <p class="font-mono bg-white p-2 rounded border" id="currentEnvironment">Detecting...</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Mode Data:</p>
+                                <p class="font-semibold text-green-600">CSV Google Sheets</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Total Lagu:</p>
+                                <p class="font-semibold" id="totalSongsCount">0</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Status API:</p>
+                                <p class="font-semibold text-purple-600">CORS Blocked</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Solutions -->
+                    <div class="bg-green-50 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold mb-3 text-green-800">✅ Solusi yang Tersedia</h3>
+                        <div class="space-y-3 text-sm">
+                            <div class="flex items-start space-x-3">
+                                <i class="fas fa-check-circle text-green-600 mt-1"></i>
+                                <div>
+                                    <p class="font-semibold">Mode CSV (Aktif)</p>
+                                    <p class="text-gray-600">Data dimuat langsung dari Google Sheets dalam format CSV. Tidak memerlukan API dan tidak terpengaruh CORS.</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start space-x-3">
+                                <i class="fas fa-info-circle text-blue-600 mt-1"></i>
+                                <div>
+                                    <p class="font-semibold">Fitur yang Tersedia</p>
+                                    <p class="text-gray-600">Semua fitur baca data berfungsi normal. Fitur tulis (tambah/edit/hapus) hanya tersimpan lokal.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold mb-3">🛠️ Aksi Troubleshooting</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <button onclick="reloadFromCSV()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm">
+                                <i class="fas fa-refresh mr-1"></i> Reload Data CSV
+                            </button>
+                            <button onclick="testDirectAPI()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                                <i class="fas fa-external-link-alt mr-1"></i> Test API di Tab Baru
+                            </button>
+                            <button onclick="exportDiagnosticInfo()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm">
+                                <i class="fas fa-download mr-1"></i> Export Info Diagnostik
+                            </button>
+                            <button onclick="resetToSampleData()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm">
+                                <i class="fas fa-database mr-1"></i> Reset ke Data Sampel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 z-50">
+        <div class="flex items-center">
+            <i class="fas fa-check-circle mr-2"></i>
+            <span id="toastMessage">Berhasil!</span>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let songs = [];
+        let activities = [];
+        let currentPage = 1;
+        let itemsPerPage = 10;
+        let editingNumber = null;
+        let filteredSongs = [];
+        let apiConnected = false;
+        let isCanvaEnvironment = false;
+        let currentPDFData = null;
+        let currentPDFName = null;
+
+        // Google Apps Script configuration
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx3XXr4xmq7qrejtLPZS1_12H3VodQ2Qd708wtiuqQdtsW3IfgfkIXgzjJJ9DccRMUP/exec';
+        const SPREADSHEET_ID = '1P96RkQ6tOQ6glzaiBYzaZMihfmMNKewwuIqn1unVlZ8';
+        const CSV_DATA_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTuz4bQ9NsD29iQv5itrhnt3GUQ5rfWvIpQsMWRnmRSQVRm4fEZftEaa3ospJYIm_vWc_-edVUnsJ5q/pub?gid=0&single=true&output=csv';
+
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+
+        async function initializeApp() {
+            try {
+                showLoading(true);
+                
+                // Detect if running in Canva environment
+                isCanvaEnvironment = window.location.hostname.includes('canva-hosted-embed.com');
+                
+                if (isCanvaEnvironment) {
+                    // Canva environment - skip API due to CORS, use CSV directly
+                    updateAPIStatus('cors-blocked', 'CORS Blocked');
+                    console.log('🔒 Canva environment detected - using CSV mode due to CORS policy');
+                    
+                    try {
+                        await loadDataFromCSV();
+                        addActivity('Data berhasil dimuat dari Google Sheets CSV (146 lagu)', 'success', 'system');
+                        showToast('✅ Mode CSV - Data berhasil dimuat dari Google Sheets!', 'success');
+                        updateDataMode('CSV Mode', 'success');
+                    } catch (csvError) {
+                        console.error('CSV loading failed:', csvError);
+                        loadSampleData();
+                        addActivity('Gagal memuat CSV, menggunakan data sampel', 'warning', 'system');
+                        showToast('⚠️ Menggunakan data sampel - CSV tidak dapat diakses', 'warning');
+                        updateDataMode('Sample Data', 'warning');
+                    }
+                } else {
+                    // Normal environment - try API first
+                    updateAPIStatus('testing', 'Menguji...');
+                    const apiTest = await testAPIConnection(false);
+                    
+                    if (apiTest) {
+                        updateAPIStatus('connected', 'Terhubung');
+                        showToast('Mode Online - API terhubung!', 'success');
+                        updateDataMode('API Mode', 'success');
+                        
+                        try {
+                            await loadDataFromSheets();
+                            addActivity('Data berhasil dimuat dari Google Apps Script API', 'success', 'system');
+                        } catch (apiError) {
+                            console.error('API load failed, trying CSV:', apiError);
+                            await loadDataFromCSV();
+                            addActivity('Data berhasil dimuat dari CSV (API fallback)', 'success', 'system');
+                            updateDataMode('CSV Fallback', 'warning');
+                        }
+                    } else {
+                        updateAPIStatus('disconnected', 'Terputus');
+                        await loadDataFromCSV();
+                        addActivity('Data berhasil dimuat dari CSV (mode offline)', 'success', 'system');
+                        showToast('Mode CSV - API tidak tersedia', 'warning');
+                        updateDataMode('CSV Mode', 'warning');
+                    }
+                }
+                
+                showLoading(false);
+            } catch (error) {
+                console.error('Initialization error:', error);
+                updateAPIStatus('disconnected', 'Error');
+                loadSampleData();
+                addActivity('Sistem diinisialisasi dengan data sampel karena error', 'warning', 'system');
+                showToast('Mode Offline - Menggunakan data sampel', 'warning');
+                updateDataMode('Sample Data', 'error');
+                showLoading(false);
+            }
+            
+            renderSongs();
+            addActivity('Sistem berhasil diinisialisasi dalam mode CSV', 'success', 'system');
+        }
+
+        // API Status Management
+        function updateAPIStatus(status, text) {
+            const statusElement = document.getElementById('apiStatus');
+            const statusText = document.getElementById('apiStatusText');
+            
+            // Remove all status classes
+            statusElement.classList.remove('connected', 'disconnected', 'testing', 'cors-blocked');
+            
+            // Add new status class
+            statusElement.classList.add(status);
+            statusText.textContent = text;
+            
+            apiConnected = (status === 'connected');
+        }
+
+        function updateDataMode(mode, status) {
+            const dataModeElement = document.getElementById('dataMode');
+            const iconClass = status === 'success' ? 'fa-check-circle text-green-600' : 
+                             status === 'warning' ? 'fa-exclamation-triangle text-yellow-600' : 
+                             'fa-times-circle text-red-600';
+            
+            dataModeElement.innerHTML = `<i class="fas ${iconClass}"></i> ${mode}`;
+        }
+
+        // CORS-aware API Connection Test
+        async function testAPIConnection(showResult = true) {
+            if (isCanvaEnvironment) {
+                // Skip API test in Canva due to CORS restrictions
+                updateAPIStatus('cors-blocked', 'CORS Blocked');
+                if (showResult) {
+                    showToast('🔒 API diblokir CORS di environment Canva - menggunakan mode CSV', 'warning');
+                    addActivity('API test dilewati karena CORS policy di Canva environment', 'warning', 'system');
+                }
+                return false;
+            }
+            
+            try {
+                updateAPIStatus('testing', 'Menguji...');
+                
+                // Try simple GET request without custom headers to avoid preflight
+                const response = await fetch(`${APPS_SCRIPT_URL}?action=test&timestamp=${Date.now()}`, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    updateAPIStatus('connected', 'Terhubung');
+                    if (showResult) {
+                        showToast('API berhasil terhubung!', 'success');
+                        addActivity('Test koneksi API berhasil', 'success', 'system');
+                    }
+                    return true;
+                } else {
+                    throw new Error(result.error || 'API test failed');
+                }
+                
+            } catch (error) {
+                console.error('API connection test failed:', error);
+                updateAPIStatus('disconnected', 'CORS Error');
+                
+                let errorMessage = 'CORS Policy - API tidak dapat diakses dari domain ini';
+                if (error.message.includes('Failed to fetch')) {
+                    errorMessage = 'Network error atau CORS policy blocking';
+                }
+                
+                if (showResult) {
+                    showToast(`Koneksi API: ${errorMessage}`, 'error');
+                    addActivity(`CORS Issue: ${errorMessage}`, 'error', 'system');
+                }
+                return false;
+            }
+        }
+
+        function loadSampleData() {
+            songs = [
+                {
+                    number: 202,
+                    title: 'NYANYIAN ANTAR PERHENTIAN JALAN SALIB',
+                    ordinarium: '',
+                    category: 'Pembuka',
+                    celebration: '',
+                    version: '',
+                    prelude: '',
+                    satb: '',
+                    status: 'active',
+                    createdAt: '06/09/2025 11:16:06',
+                    pdfData: null,
+                    pdfName: null
+                },
+                {
+                    number: 322,
+                    title: 'SAUDARA MARI SEMUA',
+                    ordinarium: '',
+                    category: 'Pembuka',
+                    celebration: '',
+                    version: '',
+                    prelude: '',
+                    satb: '',
+                    status: 'active',
+                    createdAt: '06/09/2025 11:16:06',
+                    pdfData: null,
+                    pdfName: null
+                },
+                {
+                    number: 334,
+                    title: 'KINI KAMI MENGHADAPMU',
+                    ordinarium: '',
+                    category: 'Pembuka',
+                    celebration: '',
+                    version: '',
+                    prelude: '',
+                    satb: '',
+                    status: 'active',
+                    createdAt: '06/09/2025 11:16:06',
+                    pdfData: null,
+                    pdfName: null
+                },
+                {
+                    number: 339,
+                    title: 'KYRIE',
+                    ordinarium: 'KYRIE',
+                    category: 'Ordinarium',
+                    celebration: 'MISA ADVENT & PRAPASKAH',
+                    version: '',
+                    prelude: '',
+                    satb: '',
+                    status: 'active',
+                    createdAt: '06/09/2025 11:16:06',
+                    pdfData: null,
+                    pdfName: null
+                }
+            ];
+
+            activities = [
+                {
+                    timestamp: '06/09/2025 11:16:24',
+                    description: 'Sistem berhasil diinisialisasi',
+                    status: 'success',
+                    category: 'system',
+                    user: 'System'
+                }
+            ];
+
+            filteredSongs = [...songs];
+        }
+
+        // CSV Data Loading Function
+        async function loadDataFromCSV() {
+            try {
+                const response = await fetch(CSV_DATA_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const csvText = await response.text();
+                const parsedData = parseCSV(csvText);
+                
+                // Convert CSV data to songs format
+                songs = parsedData.map((row, index) => {
+                    // Skip header row
+                    if (index === 0) return null;
+                    
+                    // Skip empty rows
+                    if (!row[0] && !row[3]) return null;
+                    
+                    // Clean and process data
+                    const cleanRow = row.map(cell => cell ? cell.replace(/^"|"$/g, '').trim() : '');
+                    
+                    const songData = {
+                        number: cleanRow[0] ? parseInt(cleanRow[0]) : index,
+                        version: cleanRow[1] || '',
+                        prelude: cleanRow[2] || '',
+                        title: cleanRow[3] || 'Judul Tidak Diketahui',
+                        ordinarium: cleanRow[4] || '',
+                        celebration: cleanRow[5] || '',
+                        satb: cleanRow[6] || '',
+                        category: determineCategory(cleanRow[3], cleanRow[4]),
+                        status: 'active',
+                        createdAt: new Date().toLocaleString('id-ID'),
+                        updatedAt: new Date().toLocaleString('id-ID'),
+                        pdfData: null,
+                        pdfName: null
+                    };
+                    
+                    return songData;
+                }).filter(song => song !== null);
+                
+                filteredSongs = [...songs];
+                
+                console.log(`Loaded ${songs.length} songs from CSV`);
+                return true;
+                
+            } catch (error) {
+                console.error('Error loading CSV data:', error);
+                throw error;
+            }
+        }
+
+        function determineCategory(title, ordinarium) {
+            // If has ordinarium type, it's Ordinarium
+            if (ordinarium && ordinarium.trim() !== '') {
+                return 'Ordinarium';
+            }
+            
+            // Auto-detect from title keywords
+            const titleLower = title.toLowerCase();
+            
+            if (titleLower.includes('kyrie') || titleLower.includes('tuhan kasihanilah') || 
+                titleLower.includes('gloria') || titleLower.includes('kemuliaan') ||
+                titleLower.includes('sanctus') || titleLower.includes('kudus') ||
+                titleLower.includes('agnus dei') || titleLower.includes('anak domba allah') ||
+                titleLower.includes('prefasi') || titleLower.includes('anamneses')) {
+                return 'Ordinarium';
+            }
+            
+            if (titleLower.includes('pembuka') || titleLower.includes('masuk')) {
+                return 'Pembuka';
+            }
+            
+            if (titleLower.includes('penutup') || titleLower.includes('pengutusan')) {
+                return 'Penutup';
+            }
+            
+            if (titleLower.includes('persembahan') || titleLower.includes('offertori')) {
+                return 'Persembahan';
+            }
+            
+            if (titleLower.includes('komuni') || titleLower.includes('communion')) {
+                return 'Komuni';
+            }
+            
+            if (titleLower.includes('mazmur') || titleLower.includes('psalm')) {
+                return 'Mazmur';
+            }
+            
+            if (titleLower.includes('alleluia') || titleLower.includes('hallelujah')) {
+                return 'Alleluia';
+            }
+            
+            // Default category
+            return 'Pembuka';
+        }
+
+        function parseCSV(csvText) {
+            const lines = csvText.split('\n');
+            const result = [];
+            
+            for (let line of lines) {
+                if (line.trim() === '') continue;
+                
+                const row = [];
+                let current = '';
+                let inQuotes = false;
+                
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        row.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                
+                row.push(current.trim());
+                result.push(row);
+            }
+            
+            return result;
+        }
+
+        function renderSongs() {
+            const tbody = document.getElementById('songsTableBody');
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const paginatedSongs = filteredSongs.slice(startIndex, endIndex);
+
+            tbody.innerHTML = '';
+
+            paginatedSongs.forEach(song => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 transition-colors';
+                
+                row.innerHTML = `
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">${song.number}</div>
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="text-sm font-medium text-gray-900">${song.title}</div>
+                        ${song.prelude ? `<div class="text-xs text-gray-500">Prelude: ${song.prelude}</div>` : ''}
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        ${song.ordinarium ? 
+                            `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">${song.ordinarium}</span>` : 
+                            '<span class="text-gray-400">-</span>'
+                        }
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(song.category)}">
+                            ${song.category}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${song.celebration || '-'}</div>
+                        ${song.version ? `<div class="text-xs text-gray-500">${song.version}</div>` : ''}
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${song.version || '-'}</div>
+                        ${song.satb ? `<div class="text-xs text-gray-500">SATB: ${song.satb}</div>` : ''}
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        ${song.pdfData ? 
+                            `<div class="flex items-center space-x-2">
+                                <i class="fas fa-file-pdf text-red-500"></i>
+                                <button onclick="viewSongPDF(${song.number})" class="text-blue-600 hover:text-blue-800 text-sm">
+                                    <i class="fas fa-eye mr-1"></i>Lihat
+                                </button>
+                            </div>` : 
+                            '<span class="text-gray-400 text-sm">Tidak ada</span>'
+                        }
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${song.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                            ${song.status === 'active' ? 'Aktif' : 'Tidak Aktif'}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                        <div class="flex space-x-2">
+                            <button onclick="editSong(${song.number})" class="text-blue-600 hover:text-blue-900 transition-colors" title="Edit Lagu">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="uploadPDFForSong(${song.number})" class="text-green-600 hover:text-green-900 transition-colors" title="Upload Partitur">
+                                <i class="fas fa-file-upload"></i>
+                            </button>
+                            ${song.pdfData ? 
+                                `<button onclick="viewSongPDF(${song.number})" class="text-purple-600 hover:text-purple-900 transition-colors" title="Lihat Partitur">
+                                    <i class="fas fa-file-pdf"></i>
+                                </button>` : ''
+                            }
+                            <button onclick="deleteSong(${song.number})" class="text-red-600 hover:text-red-900 transition-colors" title="Hapus Lagu">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+
+            updatePagination();
+            updateSongCount();
+        }
+
+        function getCategoryColor(category) {
+            const colors = {
+                'Ordinarium': 'bg-purple-100 text-purple-800',
+                'Pembuka': 'bg-blue-100 text-blue-800',
+                'Penutup': 'bg-indigo-100 text-indigo-800',
+                'Persembahan': 'bg-orange-100 text-orange-800',
+                'Komuni': 'bg-pink-100 text-pink-800',
+                'Mazmur': 'bg-green-100 text-green-800',
+                'Alleluia': 'bg-yellow-100 text-yellow-800'
+            };
+            return colors[category] || 'bg-gray-100 text-gray-800';
+        }
+
+        function updatePagination() {
+            const totalPages = Math.ceil(filteredSongs.length / itemsPerPage);
+            const pagination = document.getElementById('pagination');
+            
+            pagination.innerHTML = '';
+
+            // Previous button
+            if (currentPage > 1) {
+                const prevBtn = document.createElement('button');
+                prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i>';
+                prevBtn.className = 'px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors';
+                prevBtn.onclick = () => changePage(currentPage - 1);
+                pagination.appendChild(prevBtn);
+            }
+
+            // Page numbers
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                    const pageBtn = document.createElement('button');
+                    pageBtn.textContent = i;
+                    pageBtn.className = `px-3 py-2 border rounded-lg transition-colors ${
+                        i === currentPage 
+                            ? 'bg-blue-600 text-white border-blue-600' 
+                            : 'bg-white border-gray-300 hover:bg-gray-50'
+                    }`;
+                    pageBtn.onclick = () => changePage(i);
+                    pagination.appendChild(pageBtn);
+                } else if (i === currentPage - 2 || i === currentPage + 2) {
+                    const dots = document.createElement('span');
+                    dots.textContent = '...';
+                    dots.className = 'px-3 py-2';
+                    pagination.appendChild(dots);
+                }
+            }
+
+            // Next button
+            if (currentPage < totalPages) {
+                const nextBtn = document.createElement('button');
+                nextBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+                nextBtn.className = 'px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors';
+                nextBtn.onclick = () => changePage(currentPage + 1);
+                pagination.appendChild(nextBtn);
+            }
+        }
+
+        function changePage(page) {
+            currentPage = page;
+            renderSongs();
+        }
+
+        function updateSongCount() {
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, filteredSongs.length);
+            
+            document.getElementById('showingStart').textContent = filteredSongs.length > 0 ? startIndex + 1 : 0;
+            document.getElementById('showingEnd').textContent = endIndex;
+            document.getElementById('totalSongs').textContent = filteredSongs.length;
+        }
+
+        function openModal(songNumber = null) {
+            const modal = document.getElementById('songModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const form = document.getElementById('songForm');
+            
+            editingNumber = songNumber;
+            
+            if (songNumber) {
+                const song = songs.find(s => s.number === songNumber);
+                if (song) {
+                    modalTitle.textContent = 'Edit Lagu';
+                    document.getElementById('songNumber').value = song.number;
+                    document.getElementById('songTitle').value = song.title;
+                    document.getElementById('songOrdinarium').value = song.ordinarium || '';
+                    document.getElementById('songCategory').value = song.category;
+                    document.getElementById('songCelebration').value = song.celebration || '';
+                    document.getElementById('songVersion').value = song.version || '';
+                    document.getElementById('songPrelude').value = song.prelude || '';
+                    document.getElementById('songSATB').value = song.satb || '';
+                    document.getElementById('songStatus').value = song.status;
+                    
+                    // Handle PDF display
+                    if (song.pdfData && song.pdfName) {
+                        document.getElementById('currentPDF').classList.remove('hidden');
+                        document.getElementById('currentPDFName').textContent = song.pdfName;
+                        currentPDFData = song.pdfData;
+                        currentPDFName = song.pdfName;
+                    } else {
+                        document.getElementById('currentPDF').classList.add('hidden');
+                        currentPDFData = null;
+                        currentPDFName = null;
+                    }
+                }
+            } else {
+                modalTitle.textContent = 'Tambah Lagu Baru';
+                form.reset();
+                
+                // Generate next song number
+                const maxNumber = songs.length > 0 ? Math.max(...songs.map(s => s.number)) : 0;
+                document.getElementById('songNumber').value = maxNumber + 1;
+                
+                // Reset PDF display
+                document.getElementById('currentPDF').classList.add('hidden');
+                currentPDFData = null;
+                currentPDFName = null;
+            }
+            
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('songModal');
+            modal.classList.add('hidden');
+            document.body.style.overflow = 'auto';
+            editingNumber = null;
+        }
+
+        function updateCategoryFromOrdinarium() {
+            const ordinarium = document.getElementById('songOrdinarium').value;
+            const categorySelect = document.getElementById('songCategory');
+            
+            if (ordinarium && ordinarium.trim() !== '') {
+                categorySelect.value = 'Ordinarium';
+            }
+        }
+
+        document.getElementById('songForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            saveSong();
+        });
+
+        function saveSong() {
+            // Handle PDF file upload
+            const pdfFile = document.getElementById('songPDF').files[0];
+            let pdfData = currentPDFData;
+            let pdfName = currentPDFName;
+            
+            if (pdfFile) {
+                // Convert PDF to base64
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    pdfData = e.target.result;
+                    pdfName = pdfFile.name;
+                    saveSongWithPDF(pdfData, pdfName);
+                };
+                reader.readAsDataURL(pdfFile);
+                return; // Exit here, continue in saveSongWithPDF
+            }
+            
+            const formData = {
+                number: parseInt(document.getElementById('songNumber').value),
+                title: document.getElementById('songTitle').value,
+                ordinarium: document.getElementById('songOrdinarium').value,
+                category: document.getElementById('songCategory').value,
+                celebration: document.getElementById('songCelebration').value,
+                version: document.getElementById('songVersion').value,
+                prelude: document.getElementById('songPrelude').value,
+                satb: document.getElementById('songSATB').value,
+                status: document.getElementById('songStatus').value,
+                createdAt: editingNumber ? songs.find(s => s.number === editingNumber)?.createdAt : new Date().toLocaleString('id-ID'),
+                updatedAt: new Date().toLocaleString('id-ID'),
+                pdfData: pdfData,
+                pdfName: pdfName
+            };
+
+            // Validation
+            if (!formData.number || !formData.title || !formData.category) {
+                showToast('Mohon lengkapi field yang wajib diisi!', 'error');
+                return;
+            }
+
+            // Check for duplicate number (only for new songs)
+            if (!editingNumber && songs.some(song => song.number === formData.number)) {
+                showToast('Nomor lagu sudah ada! Gunakan nomor yang berbeda.', 'error');
+                return;
+            }
+
+            if (editingNumber) {
+                // Update existing song
+                const index = songs.findIndex(song => song.number === editingNumber);
+                if (index !== -1) {
+                    songs[index] = { ...songs[index], ...formData };
+                    addActivity(`Lagu diperbarui: ${formData.number} - ${formData.title}`, 'success', 'songs');
+                    showToast('Lagu berhasil diperbarui! (Hanya tersimpan lokal)', 'success');
+                }
+            } else {
+                // Add new song
+                songs.push(formData);
+                addActivity(`Lagu baru ditambahkan: ${formData.number} - ${formData.title}`, 'success', 'songs');
+                showToast('Lagu berhasil ditambahkan! (Hanya tersimpan lokal)', 'success');
+            }
+
+            filteredSongs = [...songs];
+            renderSongs();
+            closeModal();
+        }
+
+        function saveSongWithPDF(pdfData, pdfName) {
+            const formData = {
+                number: parseInt(document.getElementById('songNumber').value),
+                title: document.getElementById('songTitle').value,
+                ordinarium: document.getElementById('songOrdinarium').value,
+                category: document.getElementById('songCategory').value,
+                celebration: document.getElementById('songCelebration').value,
+                version: document.getElementById('songVersion').value,
+                prelude: document.getElementById('songPrelude').value,
+                satb: document.getElementById('songSATB').value,
+                status: document.getElementById('songStatus').value,
+                createdAt: editingNumber ? songs.find(s => s.number === editingNumber)?.createdAt : new Date().toLocaleString('id-ID'),
+                updatedAt: new Date().toLocaleString('id-ID'),
+                pdfData: pdfData,
+                pdfName: pdfName
+            };
+
+            // Validation
+            if (!formData.number || !formData.title || !formData.category) {
+                showToast('Mohon lengkapi field yang wajib diisi!', 'error');
+                return;
+            }
+
+            // Check for duplicate number (only for new songs)
+            if (!editingNumber && songs.some(song => song.number === formData.number)) {
+                showToast('Nomor lagu sudah ada! Gunakan nomor yang berbeda.', 'error');
+                return;
+            }
+
+            if (editingNumber) {
+                // Update existing song
+                const index = songs.findIndex(song => song.number === editingNumber);
+                if (index !== -1) {
+                    songs[index] = { ...songs[index], ...formData };
+                    addActivity(`Lagu diperbarui: ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'success', 'songs');
+                    showToast(`Lagu berhasil diperbarui${pdfName ? ' dengan partitur' : ''}! (Hanya tersimpan lokal)`, 'success');
+                }
+            } else {
+                // Add new song
+                songs.push(formData);
+                addActivity(`Lagu baru ditambahkan: ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'success', 'songs');
+                showToast(`Lagu berhasil ditambahkan${pdfName ? ' dengan partitur' : ''}! (Hanya tersimpan lokal)`, 'success');
+            }
+
+            filteredSongs = [...songs];
+            renderSongs();
+            closeModal();
+        }
+
+        function editSong(songNumber) {
+            openModal(songNumber);
+        }
+
+        // PDF Management Functions
+        function uploadPDFForSong(songNumber) {
+            const song = songs.find(s => s.number === songNumber);
+            if (!song) return;
+            
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.pdf';
+            input.onchange = function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    if (file.type !== 'application/pdf') {
+                        showToast('Hanya file PDF yang diizinkan!', 'error');
+                        return;
+                    }
+                    
+                    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+                        showToast('Ukuran file terlalu besar! Maksimal 10MB.', 'error');
+                        return;
+                    }
+                    
+                    showLoading(true);
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        song.pdfData = e.target.result;
+                        song.pdfName = file.name;
+                        song.updatedAt = new Date().toLocaleString('id-ID');
+                        
+                        filteredSongs = [...songs];
+                        renderSongs();
+                        
+                        addActivity(`Partitur diupload untuk lagu: ${song.number} - ${song.title}`, 'success', 'files');
+                        showToast(`Partitur berhasil diupload untuk "${song.title}"!`, 'success');
+                        showLoading(false);
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+            input.click();
+        }
+
+        function viewSongPDF(songNumber) {
+            const song = songs.find(s => s.number === songNumber);
+            if (!song || !song.pdfData) {
+                showToast('Partitur tidak ditemukan!', 'error');
+                return;
+            }
+            
+            showPDFModal(song.pdfData, song.pdfName, `${song.number} - ${song.title}`);
+        }
+
+        function showPDFModal(pdfData, fileName, title) {
+            const modal = document.getElementById('pdfModal');
+            const modalTitle = document.getElementById('pdfModalTitle');
+            const pdfViewer = document.getElementById('pdfViewer');
+            
+            modalTitle.textContent = `Partitur: ${title}`;
+            pdfViewer.src = pdfData;
+            
+            currentPDFData = pdfData;
+            currentPDFName = fileName;
+            
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closePDFModal() {
+            const modal = document.getElementById('pdfModal');
+            const pdfViewer = document.getElementById('pdfViewer');
+            
+            modal.classList.add('hidden');
+            document.body.style.overflow = 'auto';
+            pdfViewer.src = '';
+        }
+
+        function downloadCurrentPDF() {
+            if (!currentPDFData || !currentPDFName) {
+                showToast('Tidak ada PDF untuk didownload!', 'error');
+                return;
+            }
+            
+            const link = document.createElement('a');
+            link.href = currentPDFData;
+            link.download = currentPDFName;
+            link.click();
+            
+            showToast('PDF berhasil didownload!', 'success');
+        }
+
+        function viewPDF() {
+            if (currentPDFData) {
+                showPDFModal(currentPDFData, currentPDFName, 'Preview');
+            }
+        }
+
+        function removePDF() {
+            if (confirm('Apakah Anda yakin ingin menghapus partitur ini?')) {
+                currentPDFData = null;
+                currentPDFName = null;
+                document.getElementById('currentPDF').classList.add('hidden');
+                document.getElementById('songPDF').value = '';
+                showToast('Partitur berhasil dihapus!', 'success');
+            }
+        }
+
+        function deleteSong(songNumber) {
+            const song = songs.find(s => s.number === songNumber);
+            if (!song) return;
+
+            if (confirm(`Apakah Anda yakin ingin menghapus lagu "${song.title}"?`)) {
+                songs = songs.filter(s => s.number !== songNumber);
+                filteredSongs = filteredSongs.filter(s => s.number !== songNumber);
+                
+                // Adjust current page if necessary
+                const totalPages = Math.ceil(filteredSongs.length / itemsPerPage);
+                if (currentPage > totalPages && totalPages > 0) {
+                    currentPage = totalPages;
+                }
+                
+                renderSongs();
+                addActivity(`Lagu dihapus: ${songNumber} - ${song.title}`, 'success', 'songs');
+                showToast('Lagu berhasil dihapus! (Hanya dari tampilan lokal)', 'success');
+            }
+        }
+
+        function searchSongs() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const categoryFilter = document.getElementById('filterCategory').value;
+            const ordinariumFilter = document.getElementById('filterOrdinarium').value;
+            
+            filteredSongs = songs.filter(song => {
+                const matchesSearch = !searchTerm || 
+                    song.title.toLowerCase().includes(searchTerm) ||
+                    song.number.toString().includes(searchTerm) ||
+                    (song.celebration && song.celebration.toLowerCase().includes(searchTerm)) ||
+                    (song.ordinarium && song.ordinarium.toLowerCase().includes(searchTerm));
+                
+                const matchesCategory = !categoryFilter || song.category === categoryFilter;
+                const matchesOrdinarium = !ordinariumFilter || song.ordinarium === ordinariumFilter;
+                
+                return matchesSearch && matchesCategory && matchesOrdinarium;
+            });
+            
+            currentPage = 1;
+            renderSongs();
+        }
+
+        function filterSongs() {
+            searchSongs(); // Use the same logic as search
+        }
+
+        function exportData() {
+            // Show export options modal
+            showExportModal();
+        }
+
+        function showExportModal() {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 modal-backdrop z-50';
+            modal.innerHTML = `
+                <div class="flex items-center justify-center min-h-screen p-4">
+                    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md slide-up">
+                        <div class="p-6 border-b border-gray-200">
+                            <h2 class="text-xl font-bold text-gray-800">Export Data Lagu</h2>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <p class="text-gray-600 text-sm">Pilih format export yang diinginkan:</p>
+                            
+                            <button onclick="exportToExcel()" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center">
+                                <i class="fas fa-file-excel mr-2"></i>
+                                Export ke Excel (.xlsx)
+                            </button>
+                            
+                            <button onclick="exportToCSV()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center">
+                                <i class="fas fa-file-csv mr-2"></i>
+                                Export ke CSV
+                            </button>
+                            
+                            <button onclick="exportToGoogleSheets()" class="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center">
+                                <i class="fas fa-table mr-2"></i>
+                                Buat Google Sheets Baru
+                            </button>
+                            
+                            <button onclick="exportDetailedReport()" class="w-full bg-orange-600 hover:bg-orange-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center">
+                                <i class="fas fa-chart-bar mr-2"></i>
+                                Export Laporan Lengkap
+                            </button>
+                        </div>
+                        <div class="p-6 border-t border-gray-200">
+                            <button onclick="closeExportModal()" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-700 px-4 py-2 rounded-lg transition-colors">
+                                Batal
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            document.body.style.overflow = 'hidden';
+            
+            // Close modal when clicking outside
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    closeExportModal();
+                }
+            });
+        }
+
+        function closeExportModal() {
+            const modal = document.querySelector('.modal-backdrop');
+            if (modal) {
+                document.body.removeChild(modal);
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        function exportToExcel() {
+            showLoading(true);
+            closeExportModal();
+            
+            setTimeout(() => {
+                // Create Excel-compatible HTML table
+                const headers = [
+                    'No. Lagu', 'Judul Lagu', 'Jenis Ordinarium', 'Kategori Liturgi', 
+                    'Jenis Perayaan', 'Versi Aransemen', 'Prelude', 'Mazmur SATB', 
+                    'Status', 'Partitur', 'Dibuat', 'Diperbarui'
+                ];
+                
+                let htmlContent = `
+                    <html>
+                    <head>
+                        <meta charset="UTF-8">
+                        <style>
+                            table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; }
+                            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                            th { background-color: #4CAF50; color: white; font-weight: bold; }
+                            tr:nth-child(even) { background-color: #f2f2f2; }
+                            .status-active { color: #28a745; font-weight: bold; }
+                            .status-inactive { color: #dc3545; font-weight: bold; }
+                            .ordinarium { background-color: #e3f2fd; }
+                            .category { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Database Lagu Liturgi Gereja Katolik</h1>
+                        <p>Exported on: ${new Date().toLocaleString('id-ID')}</p>
+                        <p>Total Songs: ${songs.length}</p>
+                        <table>
+                            <thead>
+                                <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                songs.forEach(song => {
+                    const statusClass = song.status === 'active' ? 'status-active' : 'status-inactive';
+                    const statusText = song.status === 'active' ? 'Aktif' : 'Tidak Aktif';
+                    const pdfStatus = song.pdfData ? 'Ada' : 'Tidak Ada';
+                    
+                    htmlContent += `
+                        <tr>
+                            <td>${song.number}</td>
+                            <td><strong>${song.title}</strong></td>
+                            <td class="ordinarium">${song.ordinarium || '-'}</td>
+                            <td><span class="category">${song.category}</span></td>
+                            <td>${song.celebration || '-'}</td>
+                            <td>${song.version || '-'}</td>
+                            <td>${song.prelude || '-'}</td>
+                            <td>${song.satb || '-'}</td>
+                            <td class="${statusClass}">${statusText}</td>
+                            <td>${pdfStatus}</td>
+                            <td>${song.createdAt || '-'}</td>
+                            <td>${song.updatedAt || '-'}</td>
+                        </tr>
+                    `;
+                });
+                
+                htmlContent += `
+                            </tbody>
+                        </table>
+                        
+                        <h2>Statistik</h2>
+                        <table style="width: 50%;">
+                            <tr><th>Kategori</th><th>Jumlah</th></tr>
+                            ${getStatistics().map(stat => `<tr><td>${stat.category}</td><td>${stat.count}</td></tr>`).join('')}
+                        </table>
+                        
+                        <h2>Status Lagu</h2>
+                        <table style="width: 30%;">
+                            <tr><th>Status</th><th>Jumlah</th></tr>
+                            <tr><td class="status-active">Aktif</td><td>${songs.filter(s => s.status === 'active').length}</td></tr>
+                            <tr><td class="status-inactive">Tidak Aktif</td><td>${songs.filter(s => s.status === 'inactive').length}</td></tr>
+                        </table>
+                    </body>
+                    </html>
+                `;
+                
+                // Create and download Excel file
+                const blob = new Blob([htmlContent], { 
+                    type: 'application/vnd.ms-excel;charset=utf-8;' 
+                });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `Database-Lagu-Liturgi-${new Date().toISOString().split('T')[0]}.xls`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+
+                addActivity(`Data berhasil diekspor ke Excel (${songs.length} lagu)`, 'success', 'export');
+                showToast(`✅ Excel berhasil didownload dengan ${songs.length} lagu!`, 'success');
+                showLoading(false);
+            }, 1000);
+        }
+
+        function exportToCSV() {
+            showLoading(true);
+            closeExportModal();
+            
+            setTimeout(() => {
+                // Create comprehensive CSV content
+                const headers = [
+                    'Nomor Lagu', 'Judul Lagu', 'Jenis Ordinarium', 'Kategori Liturgi', 
+                    'Jenis Perayaan', 'Versi Aransemen', 'Prelude', 'Mazmur SATB', 
+                    'Status', 'Ada Partitur', 'Nama File PDF', 'Tanggal Dibuat', 'Tanggal Diperbarui'
+                ];
+                
+                const csvContent = [
+                    headers.join(','),
+                    ...songs.map(song => [
+                        song.number,
+                        `"${song.title.replace(/"/g, '""')}"`,
+                        `"${(song.ordinarium || '').replace(/"/g, '""')}"`,
+                        `"${song.category}"`,
+                        `"${(song.celebration || '').replace(/"/g, '""')}"`,
+                        `"${(song.version || '').replace(/"/g, '""')}"`,
+                        `"${(song.prelude || '').replace(/"/g, '""')}"`,
+                        `"${(song.satb || '').replace(/"/g, '""')}"`,
+                        song.status,
+                        song.pdfData ? 'Ya' : 'Tidak',
+                        `"${(song.pdfName || '').replace(/"/g, '""')}"`,
+                        `"${song.createdAt || ''}"`,
+                        `"${song.updatedAt || ''}"`
+                    ].join(','))
+                ].join('\n');
+
+                // Add BOM for proper UTF-8 encoding in Excel
+                const BOM = '\uFEFF';
+                const blob = new Blob([BOM + csvContent], { 
+                    type: 'text/csv;charset=utf-8;' 
+                });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `Database-Lagu-Liturgi-${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+
+                addActivity(`Data berhasil diekspor ke CSV (${songs.length} lagu)`, 'success', 'export');
+                showToast(`✅ CSV berhasil didownload dengan ${songs.length} lagu!`, 'success');
+                showLoading(false);
+            }, 1000);
+        }
+
+        function exportToGoogleSheets() {
+            showLoading(true);
+            closeExportModal();
+            
+            setTimeout(() => {
+                // Create Google Sheets compatible CSV
+                const headers = [
+                    'No. Lagu', 'Judul Lagu', 'Jenis Ordinarium', 'Kategori Liturgi', 
+                    'Jenis Perayaan', 'Versi Aransemen', 'Prelude', 'Mazmur SATB', 
+                    'Status', 'Ada Partitur', 'Tanggal Dibuat'
+                ];
+                
+                const csvData = [
+                    headers,
+                    ...songs.map(song => [
+                        song.number,
+                        song.title,
+                        song.ordinarium || '',
+                        song.category,
+                        song.celebration || '',
+                        song.version || '',
+                        song.prelude || '',
+                        song.satb || '',
+                        song.status === 'active' ? 'Aktif' : 'Tidak Aktif',
+                        song.pdfData ? 'Ya' : 'Tidak',
+                        song.createdAt || ''
+                    ])
+                ];
+                
+                // Convert to CSV string
+                const csvString = csvData.map(row => 
+                    row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+                ).join('\n');
+                
+                // Create Google Sheets URL
+                const encodedCsv = encodeURIComponent(csvString);
+                const googleSheetsUrl = `https://docs.google.com/spreadsheets/create?usp=sharing`;
+                
+                // Download CSV for manual import
+                const blob = new Blob(['\uFEFF' + csvString], { 
+                    type: 'text/csv;charset=utf-8;' 
+                });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `Import-Google-Sheets-${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                
+                // Open Google Sheets in new tab
+                window.open(googleSheetsUrl, '_blank');
+                
+                addActivity(`CSV untuk Google Sheets berhasil didownload (${songs.length} lagu)`, 'success', 'export');
+                showToast(`✅ File CSV didownload! Buka Google Sheets dan import file tersebut.`, 'success');
+                showLoading(false);
+                
+                // Show instructions
+                setTimeout(() => {
+                    alert(`Instruksi Import ke Google Sheets:
+1. File CSV sudah didownload
+2. Buka Google Sheets (tab baru sudah dibuka)
+3. Klik File > Import
+4. Upload file CSV yang baru didownload
+5. Pilih "Replace spreadsheet" dan klik "Import data"
+
+Total ${songs.length} lagu siap diimport!`);
+                }, 2000);
+            }, 1000);
+        }
+
+        function exportDetailedReport() {
+            showLoading(true);
+            closeExportModal();
+            
+            setTimeout(() => {
+                const stats = getStatistics();
+                const ordinariumStats = getOrdinariumStatistics();
+                const statusStats = getStatusStatistics();
+                
+                // Create detailed HTML report
+                let htmlContent = `
+                    <html>
+                    <head>
+                        <meta charset="UTF-8">
+                        <title>Laporan Database Lagu Liturgi</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+                            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 30px; }
+                            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }
+                            .stat-card { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; }
+                            .stat-number { font-size: 2em; font-weight: bold; color: #495057; }
+                            .stat-label { color: #6c757d; font-size: 0.9em; }
+                            table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+                            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                            th { background-color: #495057; color: white; }
+                            tr:nth-child(even) { background-color: #f2f2f2; }
+                            .category-ordinarium { background-color: #e3f2fd; }
+                            .category-pembuka { background-color: #e8f5e8; }
+                            .category-penutup { background-color: #fff3e0; }
+                            .category-persembahan { background-color: #fce4ec; }
+                            .category-komuni { background-color: #f3e5f5; }
+                            .category-mazmur { background-color: #e0f2f1; }
+                            .category-alleluia { background-color: #fffde7; }
+                            .status-active { color: #28a745; font-weight: bold; }
+                            .status-inactive { color: #dc3545; font-weight: bold; }
+                            .section { margin: 30px 0; }
+                            .chart-placeholder { background: #f8f9fa; border: 2px dashed #dee2e6; padding: 40px; text-align: center; color: #6c757d; border-radius: 8px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h1>📊 Laporan Database Lagu Liturgi Gereja Katolik</h1>
+                            <p>Tanggal Export: ${new Date().toLocaleString('id-ID')}</p>
+                            <p>Total Lagu: <strong>${songs.length}</strong> | Status Sistem: <strong>Aktif</strong></p>
+                        </div>
+
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-number">${songs.length}</div>
+                                <div class="stat-label">Total Lagu</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number">${songs.filter(s => s.status === 'active').length}</div>
+                                <div class="stat-label">Lagu Aktif</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number">${songs.filter(s => s.ordinarium).length}</div>
+                                <div class="stat-label">Lagu Ordinarium</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number">${songs.filter(s => s.pdfData).length}</div>
+                                <div class="stat-label">Ada Partitur</div>
+                            </div>
+                        </div>
+
+                        <div class="section">
+                            <h2>📋 Daftar Lengkap Lagu</h2>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>No.</th>
+                                        <th>Judul Lagu</th>
+                                        <th>Ordinarium</th>
+                                        <th>Kategori</th>
+                                        <th>Perayaan</th>
+                                        <th>Status</th>
+                                        <th>Partitur</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                songs.forEach(song => {
+                    const categoryClass = `category-${song.category.toLowerCase().replace(' ', '-')}`;
+                    const statusClass = song.status === 'active' ? 'status-active' : 'status-inactive';
+                    
+                    htmlContent += `
+                        <tr class="${categoryClass}">
+                            <td><strong>${song.number}</strong></td>
+                            <td><strong>${song.title}</strong></td>
+                            <td>${song.ordinarium || '-'}</td>
+                            <td>${song.category}</td>
+                            <td>${song.celebration || '-'}</td>
+                            <td class="${statusClass}">${song.status === 'active' ? 'Aktif' : 'Tidak Aktif'}</td>
+                            <td>${song.pdfData ? '✅ Ada' : '❌ Tidak Ada'}</td>
+                        </tr>
+                    `;
+                });
+                
+                htmlContent += `
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="section">
+                            <h2>📊 Statistik Berdasarkan Kategori</h2>
+                            <table style="width: 60%;">
+                                <thead>
+                                    <tr><th>Kategori Liturgi</th><th>Jumlah Lagu</th><th>Persentase</th></tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                stats.forEach(stat => {
+                    const percentage = ((stat.count / songs.length) * 100).toFixed(1);
+                    htmlContent += `<tr><td>${stat.category}</td><td>${stat.count}</td><td>${percentage}%</td></tr>`;
+                });
+                
+                htmlContent += `
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="section">
+                            <h2>🎵 Statistik Ordinarium</h2>
+                            <table style="width: 60%;">
+                                <thead>
+                                    <tr><th>Jenis Ordinarium</th><th>Jumlah</th></tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                ordinariumStats.forEach(stat => {
+                    htmlContent += `<tr><td>${stat.type || 'Bukan Ordinarium'}</td><td>${stat.count}</td></tr>`;
+                });
+                
+                htmlContent += `
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="section">
+                            <h2>📈 Status Lagu</h2>
+                            <table style="width: 40%;">
+                                <thead>
+                                    <tr><th>Status</th><th>Jumlah</th><th>Persentase</th></tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                statusStats.forEach(stat => {
+                    const percentage = ((stat.count / songs.length) * 100).toFixed(1);
+                    const statusClass = stat.status === 'active' ? 'status-active' : 'status-inactive';
+                    htmlContent += `<tr><td class="${statusClass}">${stat.status === 'active' ? 'Aktif' : 'Tidak Aktif'}</td><td>${stat.count}</td><td>${percentage}%</td></tr>`;
+                });
+                
+                htmlContent += `
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="section">
+                            <h2>📁 Status Partitur</h2>
+                            <table style="width: 50%;">
+                                <thead>
+                                    <tr><th>Status Partitur</th><th>Jumlah Lagu</th><th>Persentase</th></tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                const withPDF = songs.filter(s => s.pdfData).length;
+                const withoutPDF = songs.length - withPDF;
+                
+                htmlContent += `
+                    <tr><td>✅ Ada Partitur</td><td>${withPDF}</td><td>${((withPDF / songs.length) * 100).toFixed(1)}%</td></tr>
+                    <tr><td>❌ Tidak Ada Partitur</td><td>${withoutPDF}</td><td>${((withoutPDF / songs.length) * 100).toFixed(1)}%</td></tr>
+                `;
+                
+                htmlContent += `
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="section">
+                            <h2>ℹ️ Informasi Sistem</h2>
+                            <table style="width: 70%;">
+                                <tr><th>Parameter</th><th>Nilai</th></tr>
+                                <tr><td>Environment</td><td>${isCanvaEnvironment ? 'Canva Hosted' : 'Normal Web'}</td></tr>
+                                <tr><td>Mode Data</td><td>CSV Google Sheets</td></tr>
+                                <tr><td>Status API</td><td>${apiConnected ? 'Terhubung' : 'Tidak Terhubung'}</td></tr>
+                                <tr><td>Total Aktivitas</td><td>${activities.length}</td></tr>
+                                <tr><td>Terakhir Diperbarui</td><td>${new Date().toLocaleString('id-ID')}</td></tr>
+                            </table>
+                        </div>
+
+                        <div style="margin-top: 50px; padding: 20px; background: #f8f9fa; border-radius: 8px; text-align: center;">
+                            <p><strong>Database Lagu Liturgi Gereja Katolik</strong></p>
+                            <p>Generated by Sistem Pendataan Lagu Liturgi</p>
+                            <p style="font-size: 0.9em; color: #6c757d;">Export Date: ${new Date().toLocaleString('id-ID')}</p>
+                        </div>
+                    </body>
+                    </html>
+                `;
+                
+                // Create and download detailed report
+                const blob = new Blob([htmlContent], { 
+                    type: 'text/html;charset=utf-8;' 
+                });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `Laporan-Lengkap-Lagu-Liturgi-${new Date().toISOString().split('T')[0]}.html`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+
+                addActivity(`Laporan lengkap berhasil diekspor (${songs.length} lagu)`, 'success', 'export');
+                showToast(`✅ Laporan lengkap berhasil didownload!`, 'success');
+                showLoading(false);
+            }, 1500);
+        }
+
+        function getStatistics() {
+            const categories = {};
+            songs.forEach(song => {
+                categories[song.category] = (categories[song.category] || 0) + 1;
+            });
+            
+            return Object.entries(categories)
+                .map(([category, count]) => ({ category, count }))
+                .sort((a, b) => b.count - a.count);
+        }
+
+        function getOrdinariumStatistics() {
+            const ordinarium = {};
+            songs.forEach(song => {
+                const type = song.ordinarium || 'Bukan Ordinarium';
+                ordinarium[type] = (ordinarium[type] || 0) + 1;
+            });
+            
+            return Object.entries(ordinarium)
+                .map(([type, count]) => ({ type, count }))
+                .sort((a, b) => b.count - a.count);
+        }
+
+        function getStatusStatistics() {
+            const statuses = {};
+            songs.forEach(song => {
+                statuses[song.status] = (statuses[song.status] || 0) + 1;
+            });
+            
+            return Object.entries(statuses)
+                .map(([status, count]) => ({ status, count }));
+        }
+
+        function showHistory() {
+            const modal = document.getElementById('historyModal');
+            const tbody = document.getElementById('historyTableBody');
+            
+            tbody.innerHTML = '';
+            
+            // Sort activities by timestamp (newest first)
+            const sortedActivities = [...activities].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            sortedActivities.forEach(activity => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+                
+                const statusColor = activity.status === 'success' ? 'text-green-600' : 
+                                  activity.status === 'error' ? 'text-red-600' : 'text-yellow-600';
+                
+                const categoryColor = {
+                    'system': 'bg-blue-100 text-blue-800',
+                    'songs': 'bg-green-100 text-green-800',
+                    'sync': 'bg-purple-100 text-purple-800',
+                    'export': 'bg-orange-100 text-orange-800',
+                    'files': 'bg-teal-100 text-teal-800'
+                }[activity.category] || 'bg-gray-100 text-gray-800';
+                
+                row.innerHTML = `
+                    <td class="px-4 py-3 text-sm text-gray-900">${activity.timestamp}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">${activity.description}</td>
+                    <td class="px-4 py-3">
+                        <span class="inline-flex items-center ${statusColor}">
+                            <i class="fas fa-${activity.status === 'success' ? 'check-circle' : activity.status === 'error' ? 'times-circle' : 'exclamation-circle'} mr-1"></i>
+                            ${activity.status}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${categoryColor}">
+                            ${activity.category}
+                        </span>
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+            
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeHistoryModal() {
+            const modal = document.getElementById('historyModal');
+            modal.classList.add('hidden');
+            document.body.style.overflow = 'auto';
+        }
+
+        async function reloadFromCSV() {
+            showLoading(true);
+            try {
+                await loadDataFromCSV();
+                renderSongs();
+                addActivity('Data berhasil dimuat ulang dari Google Sheets CSV', 'success', 'system');
+                showToast('Data berhasil dimuat ulang dari CSV Google Sheets!', 'success');
+            } catch (error) {
+                showToast(`Gagal memuat data dari CSV: ${error.message}`, 'error');
+                addActivity(`Gagal memuat dari CSV: ${error.message}`, 'error', 'system');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function addActivity(description, status, category, user = 'System') {
+            const activity = {
+                timestamp: new Date().toLocaleString('id-ID'),
+                description,
+                status,
+                category,
+                user
+            };
+            
+            activities.unshift(activity);
+            
+            // Keep only last 1000 activities
+            if (activities.length > 1000) {
+                activities = activities.slice(0, 1000);
+            }
+        }
+
+        function showLoading(show) {
+            const overlay = document.getElementById('loadingOverlay');
+            if (show) {
+                overlay.classList.remove('hidden');
+            } else {
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            
+            toastMessage.textContent = message;
+            
+            // Set color based on type
+            if (type === 'error') {
+                toast.className = toast.className.replace('bg-green-500', 'bg-red-500');
+            } else if (type === 'warning') {
+                toast.className = toast.className.replace('bg-green-500', 'bg-yellow-500').replace('bg-red-500', 'bg-yellow-500');
+            } else {
+                toast.className = toast.className.replace('bg-red-500', 'bg-green-500').replace('bg-yellow-500', 'bg-green-500');
+            }
+            
+            // Show toast
+            toast.style.transform = 'translateX(0)';
+            
+            // Hide after 4 seconds
+            setTimeout(() => {
+                toast.style.transform = 'translateX(100%)';
+            }, 4000);
+        }
+
+        // Troubleshooting Functions
+        function showTroubleshooting() {
+            const modal = document.getElementById('troubleshootModal');
+            
+            // Update environment info
+            document.getElementById('currentEnvironment').textContent = 
+                isCanvaEnvironment ? 'Canva Hosted Environment (CORS Restricted)' : 'Normal Web Environment';
+            document.getElementById('totalSongsCount').textContent = songs.length;
+            
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeTroubleshootModal() {
+            const modal = document.getElementById('troubleshootModal');
+            modal.classList.add('hidden');
+            document.body.style.overflow = 'auto';
+        }
+
+        function testDirectAPI() {
+            // Open API URL in new tab for direct testing
+            window.open(APPS_SCRIPT_URL + '?action=test', '_blank');
+            showToast('API URL dibuka di tab baru untuk testing langsung', 'success');
+        }
+
+        function resetToSampleData() {
+            if (confirm('Apakah Anda yakin ingin reset ke data sampel? Data lokal akan hilang.')) {
+                loadSampleData();
+                renderSongs();
+                showToast('Data berhasil direset ke sampel', 'success');
+                addActivity('Data direset ke sampel oleh user', 'warning', 'system');
+                closeTroubleshootModal();
+            }
+        }
+
+        function exportDiagnosticInfo() {
+            const diagnosticInfo = {
+                timestamp: new Date().toISOString(),
+                environment: isCanvaEnvironment ? 'Canva' : 'Normal',
+                hostname: window.location.hostname,
+                apiUrl: APPS_SCRIPT_URL,
+                apiConnected: apiConnected,
+                corsBlocked: isCanvaEnvironment,
+                userAgent: navigator.userAgent,
+                songsCount: songs.length,
+                activitiesCount: activities.length,
+                lastError: activities.find(a => a.status === 'error')?.description || 'None',
+                dataSource: isCanvaEnvironment ? 'CSV' : (apiConnected ? 'API' : 'CSV'),
+                browserFeatures: {
+                    localStorage: typeof(Storage) !== "undefined",
+                    fetch: typeof(fetch) !== "undefined",
+                    promises: typeof(Promise) !== "undefined"
+                }
+            };
+            
+            const blob = new Blob([JSON.stringify(diagnosticInfo, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `diagnostic-info-${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showToast('Info diagnostik berhasil diexport', 'success');
+        }
+
+        // Close modals when clicking outside
+        document.addEventListener('click', function(e) {
+            const songModal = document.getElementById('songModal');
+            const historyModal = document.getElementById('historyModal');
+            const troubleshootModal = document.getElementById('troubleshootModal');
+            const pdfModal = document.getElementById('pdfModal');
+            
+            if (e.target === songModal) {
+                closeModal();
+            }
+            if (e.target === historyModal) {
+                closeHistoryModal();
+            }
+            if (e.target === troubleshootModal) {
+                closeTroubleshootModal();
+            }
+            if (e.target === pdfModal) {
+                closePDFModal();
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+                closeHistoryModal();
+                closeTroubleshootModal();
+                closePDFModal();
+            }
+            if (e.ctrlKey && e.key === 'n') {
+                e.preventDefault();
+                openModal();
+            }
+        });
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97bf830c179b6045',t:'MTc1NzM0NTY4Ni4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
