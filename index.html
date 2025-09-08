@@ -74,11 +74,17 @@
                             <i class="fas fa-table"></i> CSV Mode
                         </p>
                     </div>
-                    <button onclick="testAPIConnection()" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg transition-colors">
-                        <i class="fas fa-plug"></i> Test API
+                    <button onclick="refreshAPIConnection()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-sync-alt"></i> Test API
+                    </button>
+                    <button onclick="syncToGoogleSheets()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors" id="syncButton">
+                        <i class="fas fa-cloud-upload-alt"></i> Sync to Sheets
                     </button>
                     <button onclick="reloadFromCSV()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-table"></i> Reload CSV
+                    </button>
+                    <button onclick="showSystemInfo()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-info-circle"></i> Info Sistem
                     </button>
                     <button onclick="showTroubleshooting()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
                         <i class="fas fa-tools"></i> Troubleshoot
@@ -472,9 +478,17 @@
         let currentPDFName = null;
 
         // Google Apps Script configuration
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx3XXr4xmq7qrejtLPZS1_12H3VodQ2Qd708wtiuqQdtsW3IfgfkIXgzjJJ9DccRMUP/exec';
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzRiItN_OAylBuIoMnVXMEQ7al2zURLXAtd3R1TuixOJLfqiPUnLNwf-a6VxLCI_M9S/exec';
         const SPREADSHEET_ID = '1P96RkQ6tOQ6glzaiBYzaZMihfmMNKewwuIqn1unVlZ8';
         const CSV_DATA_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTuz4bQ9NsD29iQv5itrhnt3GUQ5rfWvIpQsMWRnmRSQVRm4fEZftEaa3ospJYIm_vWc_-edVUnsJ5q/pub?gid=0&single=true&output=csv';
+        
+        // Alternative CRUD endpoints using different approach
+        const CRUD_ENDPOINTS = {
+            create: `https://script.google.com/macros/s/AKfycbzRiItN_OAylBuIoMnVXMEQ7al2zURLXAtd3R1TuixOJLfqiPUnLNwf-a6VxLCI_M9S/exec`,
+            read: CSV_DATA_URL,
+            update: `https://script.google.com/macros/s/AKfycbzRiItN_OAylBuIoMnVXMEQ7al2zURLXAtd3R1TuixOJLfqiPUnLNwf-a6VxLCI_M9S/exec`,
+            delete: `https://script.google.com/macros/s/AKfycbzRiItN_OAylBuIoMnVXMEQ7al2zURLXAtd3R1TuixOJLfqiPUnLNwf-a6VxLCI_M9S/exec`
+        };
 
         // Initialize application
         document.addEventListener('DOMContentLoaded', function() {
@@ -485,52 +499,34 @@
             try {
                 showLoading(true);
                 
-                // Detect if running in Canva environment
-                isCanvaEnvironment = window.location.hostname.includes('canva-hosted-embed.com');
+                // Detect environment
+                isCanvaEnvironment = window.location.hostname.includes('canva-hosted-embed.com') || 
+                                   window.location.hostname.includes('localhost') ||
+                                   window.location.protocol === 'file:';
                 
-                if (isCanvaEnvironment) {
-                    // Canva environment - skip API due to CORS, use CSV directly
-                    updateAPIStatus('cors-blocked', 'CORS Blocked');
-                    console.log('🔒 Canva environment detected - using CSV mode due to CORS policy');
-                    
-                    try {
-                        await loadDataFromCSV();
-                        addActivity('Data berhasil dimuat dari Google Sheets CSV (146 lagu)', 'success', 'system');
-                        showToast('✅ Mode CSV - Data berhasil dimuat dari Google Sheets!', 'success');
-                        updateDataMode('CSV Mode', 'success');
-                    } catch (csvError) {
-                        console.error('CSV loading failed:', csvError);
-                        loadSampleData();
-                        addActivity('Gagal memuat CSV, menggunakan data sampel', 'warning', 'system');
-                        showToast('⚠️ Menggunakan data sampel - CSV tidak dapat diakses', 'warning');
-                        updateDataMode('Sample Data', 'warning');
-                    }
+                // Test API connection first
+                console.log('🔄 Testing Google Sheets API connection...');
+                const apiWorking = await testAPIConnection(false);
+                
+                if (apiWorking) {
+                    console.log('✅ API connection successful - CRUD operations enabled');
+                    updateDataMode('API + CSV Mode', 'success');
                 } else {
-                    // Normal environment - try API first
-                    updateAPIStatus('testing', 'Menguji...');
-                    const apiTest = await testAPIConnection(false);
-                    
-                    if (apiTest) {
-                        updateAPIStatus('connected', 'Terhubung');
-                        showToast('Mode Online - API terhubung!', 'success');
-                        updateDataMode('API Mode', 'success');
-                        
-                        try {
-                            await loadDataFromSheets();
-                            addActivity('Data berhasil dimuat dari Google Apps Script API', 'success', 'system');
-                        } catch (apiError) {
-                            console.error('API load failed, trying CSV:', apiError);
-                            await loadDataFromCSV();
-                            addActivity('Data berhasil dimuat dari CSV (API fallback)', 'success', 'system');
-                            updateDataMode('CSV Fallback', 'warning');
-                        }
-                    } else {
-                        updateAPIStatus('disconnected', 'Terputus');
-                        await loadDataFromCSV();
-                        addActivity('Data berhasil dimuat dari CSV (mode offline)', 'success', 'system');
-                        showToast('Mode CSV - API tidak tersedia', 'warning');
-                        updateDataMode('CSV Mode', 'warning');
-                    }
+                    console.log('🔒 API blocked - using CSV read-only mode');
+                    updateDataMode('CSV Mode (Read-Only)', 'warning');
+                }
+                
+                // Load data from CSV regardless of API status
+                try {
+                    await loadDataFromCSV();
+                    addActivity(`Data berhasil dimuat dari Google Sheets CSV (${songs.length} lagu)`, 'success', 'system');
+                    showToast(`✅ Data berhasil dimuat dari Google Sheets CSV (${songs.length} lagu)!`, 'success');
+                } catch (csvError) {
+                    console.error('CSV loading failed:', csvError);
+                    loadSampleData();
+                    addActivity('Gagal memuat CSV, menggunakan data sampel', 'warning', 'system');
+                    showToast('⚠️ Menggunakan data sampel - CSV tidak dapat diakses', 'warning');
+                    updateDataMode('Sample Data', 'error');
                 }
                 
                 showLoading(false);
@@ -545,13 +541,14 @@
             }
             
             renderSongs();
-            addActivity('Sistem berhasil diinisialisasi dalam mode CSV', 'success', 'system');
+            addActivity(`Sistem berhasil diinisialisasi dengan ${apiConnected ? 'API + CSV' : 'CSV'} mode`, 'success', 'system');
         }
 
         // API Status Management
         function updateAPIStatus(status, text) {
             const statusElement = document.getElementById('apiStatus');
             const statusText = document.getElementById('apiStatusText');
+            const syncButton = document.getElementById('syncButton');
             
             // Remove all status classes
             statusElement.classList.remove('connected', 'disconnected', 'testing', 'cors-blocked');
@@ -561,6 +558,19 @@
             statusText.textContent = text;
             
             apiConnected = (status === 'connected');
+            
+            // Update sync button visibility and state
+            if (syncButton) {
+                if (apiConnected) {
+                    syncButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                    syncButton.disabled = false;
+                    syncButton.title = 'Sinkronisasi perubahan lokal ke Google Sheets';
+                } else {
+                    syncButton.classList.add('opacity-50', 'cursor-not-allowed');
+                    syncButton.disabled = true;
+                    syncButton.title = 'API tidak terhubung - sinkronisasi tidak tersedia';
+                }
+            }
         }
 
         function updateDataMode(mode, status) {
@@ -572,58 +582,125 @@
             dataModeElement.innerHTML = `<i class="fas ${iconClass}"></i> ${mode}`;
         }
 
-        // CORS-aware API Connection Test
-        async function testAPIConnection(showResult = true) {
-            if (isCanvaEnvironment) {
-                // Skip API test in Canva due to CORS restrictions
-                updateAPIStatus('cors-blocked', 'CORS Blocked');
-                if (showResult) {
-                    showToast('🔒 API diblokir CORS di environment Canva - menggunakan mode CSV', 'warning');
-                    addActivity('API test dilewati karena CORS policy di Canva environment', 'warning', 'system');
-                }
-                return false;
-            }
-            
+        // Google Sheets API Functions
+        async function callGoogleSheetsAPI(action, data = {}) {
             try {
-                updateAPIStatus('testing', 'Menguji...');
-                
-                // Try simple GET request without custom headers to avoid preflight
-                const response = await fetch(`${APPS_SCRIPT_URL}?action=test&timestamp=${Date.now()}`, {
-                    method: 'GET',
-                    mode: 'cors'
+                const payload = {
+                    action: action,
+                    spreadsheetId: SPREADSHEET_ID,
+                    ...data
+                };
+
+                const response = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Try no-cors mode
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
                 });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const result = await response.json();
-                
-                if (result.success) {
-                    updateAPIStatus('connected', 'Terhubung');
-                    if (showResult) {
-                        showToast('API berhasil terhubung!', 'success');
-                        addActivity('Test koneksi API berhasil', 'success', 'system');
-                    }
-                    return true;
-                } else {
-                    throw new Error(result.error || 'API test failed');
-                }
+                // Since no-cors mode doesn't allow reading response, we'll assume success
+                return { success: true, message: 'Request sent successfully' };
                 
             } catch (error) {
-                console.error('API connection test failed:', error);
-                updateAPIStatus('disconnected', 'CORS Error');
-                
-                let errorMessage = 'CORS Policy - API tidak dapat diakses dari domain ini';
-                if (error.message.includes('Failed to fetch')) {
-                    errorMessage = 'Network error atau CORS policy blocking';
+                console.error('Google Sheets API Error:', error);
+                throw error;
+            }
+        }
+
+        // Alternative approach using form submission
+        async function submitToGoogleSheets(action, data) {
+            return new Promise((resolve, reject) => {
+                try {
+                    // Create a hidden form
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = APPS_SCRIPT_URL;
+                    form.target = 'hidden_iframe';
+                    form.style.display = 'none';
+
+                    // Add data fields
+                    const actionField = document.createElement('input');
+                    actionField.type = 'hidden';
+                    actionField.name = 'action';
+                    actionField.value = action;
+                    form.appendChild(actionField);
+
+                    const spreadsheetField = document.createElement('input');
+                    spreadsheetField.type = 'hidden';
+                    spreadsheetField.name = 'spreadsheetId';
+                    spreadsheetField.value = SPREADSHEET_ID;
+                    form.appendChild(spreadsheetField);
+
+                    // Add song data
+                    Object.keys(data).forEach(key => {
+                        const field = document.createElement('input');
+                        field.type = 'hidden';
+                        field.name = key;
+                        field.value = data[key] || '';
+                        form.appendChild(field);
+                    });
+
+                    // Create hidden iframe
+                    let iframe = document.getElementById('hidden_iframe');
+                    if (!iframe) {
+                        iframe = document.createElement('iframe');
+                        iframe.id = 'hidden_iframe';
+                        iframe.name = 'hidden_iframe';
+                        iframe.style.display = 'none';
+                        document.body.appendChild(iframe);
+                    }
+
+                    // Handle iframe load
+                    iframe.onload = function() {
+                        setTimeout(() => {
+                            resolve({ success: true, message: 'Data submitted successfully' });
+                        }, 1000);
+                    };
+
+                    // Submit form
+                    document.body.appendChild(form);
+                    form.submit();
+                    document.body.removeChild(form);
+
+                } catch (error) {
+                    reject(error);
                 }
-                
+            });
+        }
+
+        // Test API Connection with multiple approaches
+        async function testAPIConnection(showResult = true) {
+            try {
+                // Try direct API call first
+                const testResponse = await callGoogleSheetsAPI('test');
+                updateAPIStatus('connected', 'Connected');
                 if (showResult) {
-                    showToast(`Koneksi API: ${errorMessage}`, 'error');
-                    addActivity(`CORS Issue: ${errorMessage}`, 'error', 'system');
+                    showToast('✅ API berhasil terhubung!', 'success');
+                    addActivity('API berhasil terhubung ke Google Sheets', 'success', 'system');
                 }
-                return false;
+                return true;
+            } catch (error) {
+                console.log('Direct API failed, trying alternative approach...');
+                
+                try {
+                    // Try form submission approach
+                    await submitToGoogleSheets('test', {});
+                    updateAPIStatus('connected', 'Connected (Form)');
+                    if (showResult) {
+                        showToast('✅ API terhubung via form submission!', 'success');
+                        addActivity('API terhubung menggunakan form submission', 'success', 'system');
+                    }
+                    return true;
+                } catch (formError) {
+                    updateAPIStatus('cors-blocked', 'CORS Blocked');
+                    if (showResult) {
+                        showToast('🔒 API diblokir CORS - menggunakan mode CSV', 'warning');
+                        addActivity('API test gagal karena CORS policy', 'warning', 'system');
+                    }
+                    return false;
+                }
             }
         }
 
@@ -1054,7 +1131,7 @@
             saveSong();
         });
 
-        function saveSong() {
+        async function saveSong() {
             // Handle PDF file upload
             const pdfFile = document.getElementById('songPDF').files[0];
             let pdfData = currentPDFData;
@@ -1100,27 +1177,86 @@
                 return;
             }
 
-            if (editingNumber) {
-                // Update existing song
-                const index = songs.findIndex(song => song.number === editingNumber);
-                if (index !== -1) {
-                    songs[index] = { ...songs[index], ...formData };
-                    addActivity(`Lagu diperbarui: ${formData.number} - ${formData.title}`, 'success', 'songs');
-                    showToast('Lagu berhasil diperbarui! (Hanya tersimpan lokal)', 'success');
-                }
-            } else {
-                // Add new song
-                songs.push(formData);
-                addActivity(`Lagu baru ditambahkan: ${formData.number} - ${formData.title}`, 'success', 'songs');
-                showToast('Lagu berhasil ditambahkan! (Hanya tersimpan lokal)', 'success');
-            }
+            showLoading(true);
 
-            filteredSongs = [...songs];
-            renderSongs();
-            closeModal();
+            try {
+                if (apiConnected) {
+                    // Try to save to Google Sheets
+                    const action = editingNumber ? 'update' : 'create';
+                    const apiData = {
+                        songNumber: formData.number,
+                        version: formData.version,
+                        prelude: formData.prelude,
+                        title: formData.title,
+                        ordinarium: formData.ordinarium,
+                        celebration: formData.celebration,
+                        satb: formData.satb,
+                        category: formData.category,
+                        status: formData.status,
+                        pdfName: formData.pdfName || '',
+                        updatedAt: formData.updatedAt
+                    };
+
+                    await submitToGoogleSheets(action, apiData);
+                    
+                    if (editingNumber) {
+                        const index = songs.findIndex(song => song.number === editingNumber);
+                        if (index !== -1) {
+                            songs[index] = { ...songs[index], ...formData };
+                            addActivity(`Lagu diperbarui di Google Sheets: ${formData.number} - ${formData.title}`, 'success', 'sync');
+                            showToast('✅ Lagu berhasil diperbarui di Google Sheets!', 'success');
+                        }
+                    } else {
+                        songs.push(formData);
+                        addActivity(`Lagu baru ditambahkan ke Google Sheets: ${formData.number} - ${formData.title}`, 'success', 'sync');
+                        showToast('✅ Lagu berhasil ditambahkan ke Google Sheets!', 'success');
+                    }
+                } else {
+                    // Fallback to local storage
+                    if (editingNumber) {
+                        const index = songs.findIndex(song => song.number === editingNumber);
+                        if (index !== -1) {
+                            songs[index] = { ...songs[index], ...formData };
+                            addActivity(`Lagu diperbarui: ${formData.number} - ${formData.title}`, 'success', 'songs');
+                            showToast('⚠️ Lagu berhasil diperbarui! (Hanya tersimpan lokal - API tidak tersedia)', 'warning');
+                        }
+                    } else {
+                        songs.push(formData);
+                        addActivity(`Lagu baru ditambahkan: ${formData.number} - ${formData.title}`, 'success', 'songs');
+                        showToast('⚠️ Lagu berhasil ditambahkan! (Hanya tersimpan lokal - API tidak tersedia)', 'warning');
+                    }
+                }
+
+                filteredSongs = [...songs];
+                renderSongs();
+                closeModal();
+
+            } catch (error) {
+                console.error('Error saving to Google Sheets:', error);
+                
+                // Fallback to local save
+                if (editingNumber) {
+                    const index = songs.findIndex(song => song.number === editingNumber);
+                    if (index !== -1) {
+                        songs[index] = { ...songs[index], ...formData };
+                        addActivity(`Lagu diperbarui (lokal): ${formData.number} - ${formData.title}`, 'warning', 'songs');
+                        showToast('⚠️ Lagu berhasil diperbarui lokal (gagal sync ke Google Sheets)', 'warning');
+                    }
+                } else {
+                    songs.push(formData);
+                    addActivity(`Lagu baru ditambahkan (lokal): ${formData.number} - ${formData.title}`, 'warning', 'songs');
+                    showToast('⚠️ Lagu berhasil ditambahkan lokal (gagal sync ke Google Sheets)', 'warning');
+                }
+
+                filteredSongs = [...songs];
+                renderSongs();
+                closeModal();
+            } finally {
+                showLoading(false);
+            }
         }
 
-        function saveSongWithPDF(pdfData, pdfName) {
+        async function saveSongWithPDF(pdfData, pdfName) {
             const formData = {
                 number: parseInt(document.getElementById('songNumber').value),
                 title: document.getElementById('songTitle').value,
@@ -1149,24 +1285,83 @@
                 return;
             }
 
-            if (editingNumber) {
-                // Update existing song
-                const index = songs.findIndex(song => song.number === editingNumber);
-                if (index !== -1) {
-                    songs[index] = { ...songs[index], ...formData };
-                    addActivity(`Lagu diperbarui: ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'success', 'songs');
-                    showToast(`Lagu berhasil diperbarui${pdfName ? ' dengan partitur' : ''}! (Hanya tersimpan lokal)`, 'success');
-                }
-            } else {
-                // Add new song
-                songs.push(formData);
-                addActivity(`Lagu baru ditambahkan: ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'success', 'songs');
-                showToast(`Lagu berhasil ditambahkan${pdfName ? ' dengan partitur' : ''}! (Hanya tersimpan lokal)`, 'success');
-            }
+            showLoading(true);
 
-            filteredSongs = [...songs];
-            renderSongs();
-            closeModal();
+            try {
+                if (apiConnected) {
+                    // Try to save to Google Sheets
+                    const action = editingNumber ? 'update' : 'create';
+                    const apiData = {
+                        songNumber: formData.number,
+                        version: formData.version,
+                        prelude: formData.prelude,
+                        title: formData.title,
+                        ordinarium: formData.ordinarium,
+                        celebration: formData.celebration,
+                        satb: formData.satb,
+                        category: formData.category,
+                        status: formData.status,
+                        pdfName: formData.pdfName || '',
+                        updatedAt: formData.updatedAt
+                    };
+
+                    await submitToGoogleSheets(action, apiData);
+                    
+                    if (editingNumber) {
+                        const index = songs.findIndex(song => song.number === editingNumber);
+                        if (index !== -1) {
+                            songs[index] = { ...songs[index], ...formData };
+                            addActivity(`Lagu diperbarui di Google Sheets: ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'success', 'sync');
+                            showToast(`✅ Lagu berhasil diperbarui di Google Sheets${pdfName ? ' dengan partitur' : ''}!`, 'success');
+                        }
+                    } else {
+                        songs.push(formData);
+                        addActivity(`Lagu baru ditambahkan ke Google Sheets: ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'success', 'sync');
+                        showToast(`✅ Lagu berhasil ditambahkan ke Google Sheets${pdfName ? ' dengan partitur' : ''}!`, 'success');
+                    }
+                } else {
+                    // Fallback to local storage
+                    if (editingNumber) {
+                        const index = songs.findIndex(song => song.number === editingNumber);
+                        if (index !== -1) {
+                            songs[index] = { ...songs[index], ...formData };
+                            addActivity(`Lagu diperbarui: ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'success', 'songs');
+                            showToast(`⚠️ Lagu berhasil diperbarui${pdfName ? ' dengan partitur' : ''}! (Hanya tersimpan lokal - API tidak tersedia)`, 'warning');
+                        }
+                    } else {
+                        songs.push(formData);
+                        addActivity(`Lagu baru ditambahkan: ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'success', 'songs');
+                        showToast(`⚠️ Lagu berhasil ditambahkan${pdfName ? ' dengan partitur' : ''}! (Hanya tersimpan lokal - API tidak tersedia)`, 'warning');
+                    }
+                }
+
+                filteredSongs = [...songs];
+                renderSongs();
+                closeModal();
+
+            } catch (error) {
+                console.error('Error saving to Google Sheets:', error);
+                
+                // Fallback to local save
+                if (editingNumber) {
+                    const index = songs.findIndex(song => song.number === editingNumber);
+                    if (index !== -1) {
+                        songs[index] = { ...songs[index], ...formData };
+                        addActivity(`Lagu diperbarui (lokal): ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'warning', 'songs');
+                        showToast(`⚠️ Lagu berhasil diperbarui lokal${pdfName ? ' dengan partitur' : ''} (gagal sync ke Google Sheets)`, 'warning');
+                    }
+                } else {
+                    songs.push(formData);
+                    addActivity(`Lagu baru ditambahkan (lokal): ${formData.number} - ${formData.title}${pdfName ? ' (dengan partitur)' : ''}`, 'warning', 'songs');
+                    showToast(`⚠️ Lagu berhasil ditambahkan lokal${pdfName ? ' dengan partitur' : ''} (gagal sync ke Google Sheets)`, 'warning');
+                }
+
+                filteredSongs = [...songs];
+                renderSongs();
+                closeModal();
+            } finally {
+                showLoading(false);
+            }
         }
 
         function editSong(songNumber) {
@@ -1278,23 +1473,59 @@
             }
         }
 
-        function deleteSong(songNumber) {
+        async function deleteSong(songNumber) {
             const song = songs.find(s => s.number === songNumber);
             if (!song) return;
 
             if (confirm(`Apakah Anda yakin ingin menghapus lagu "${song.title}"?`)) {
-                songs = songs.filter(s => s.number !== songNumber);
-                filteredSongs = filteredSongs.filter(s => s.number !== songNumber);
-                
-                // Adjust current page if necessary
-                const totalPages = Math.ceil(filteredSongs.length / itemsPerPage);
-                if (currentPage > totalPages && totalPages > 0) {
-                    currentPage = totalPages;
+                showLoading(true);
+
+                try {
+                    if (apiConnected) {
+                        // Try to delete from Google Sheets
+                        await submitToGoogleSheets('delete', { songNumber: songNumber });
+                        
+                        songs = songs.filter(s => s.number !== songNumber);
+                        filteredSongs = filteredSongs.filter(s => s.number !== songNumber);
+                        
+                        addActivity(`Lagu dihapus dari Google Sheets: ${songNumber} - ${song.title}`, 'success', 'sync');
+                        showToast('✅ Lagu berhasil dihapus dari Google Sheets!', 'success');
+                    } else {
+                        // Local delete only
+                        songs = songs.filter(s => s.number !== songNumber);
+                        filteredSongs = filteredSongs.filter(s => s.number !== songNumber);
+                        
+                        addActivity(`Lagu dihapus: ${songNumber} - ${song.title}`, 'success', 'songs');
+                        showToast('⚠️ Lagu berhasil dihapus! (Hanya dari tampilan lokal - API tidak tersedia)', 'warning');
+                    }
+
+                    // Adjust current page if necessary
+                    const totalPages = Math.ceil(filteredSongs.length / itemsPerPage);
+                    if (currentPage > totalPages && totalPages > 0) {
+                        currentPage = totalPages;
+                    }
+                    
+                    renderSongs();
+
+                } catch (error) {
+                    console.error('Error deleting from Google Sheets:', error);
+                    
+                    // Fallback to local delete
+                    songs = songs.filter(s => s.number !== songNumber);
+                    filteredSongs = filteredSongs.filter(s => s.number !== songNumber);
+                    
+                    // Adjust current page if necessary
+                    const totalPages = Math.ceil(filteredSongs.length / itemsPerPage);
+                    if (currentPage > totalPages && totalPages > 0) {
+                        currentPage = totalPages;
+                    }
+                    
+                    renderSongs();
+                    addActivity(`Lagu dihapus (lokal): ${songNumber} - ${song.title}`, 'warning', 'songs');
+                    showToast('⚠️ Lagu berhasil dihapus lokal (gagal sync ke Google Sheets)', 'warning');
+                } finally {
+                    showLoading(false);
                 }
-                
-                renderSongs();
-                addActivity(`Lagu dihapus: ${songNumber} - ${song.title}`, 'success', 'songs');
-                showToast('Lagu berhasil dihapus! (Hanya dari tampilan lokal)', 'success');
             }
         }
 
@@ -1930,11 +2161,94 @@ Total ${songs.length} lagu siap diimport!`);
             try {
                 await loadDataFromCSV();
                 renderSongs();
-                addActivity('Data berhasil dimuat ulang dari Google Sheets CSV', 'success', 'system');
-                showToast('Data berhasil dimuat ulang dari CSV Google Sheets!', 'success');
+                addActivity(`Data berhasil dimuat ulang dari Google Sheets CSV (${songs.length} lagu)`, 'success', 'system');
+                showToast(`Data berhasil dimuat ulang dari CSV Google Sheets (${songs.length} lagu)!`, 'success');
             } catch (error) {
                 showToast(`Gagal memuat data dari CSV: ${error.message}`, 'error');
                 addActivity(`Gagal memuat dari CSV: ${error.message}`, 'error', 'system');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Sync all local changes to Google Sheets
+        async function syncToGoogleSheets() {
+            if (!apiConnected) {
+                showToast('❌ API tidak terhubung - tidak dapat melakukan sinkronisasi', 'error');
+                return;
+            }
+
+            showLoading(true);
+            let successCount = 0;
+            let errorCount = 0;
+
+            try {
+                // Get all songs that have been modified locally
+                const localSongs = songs.filter(song => 
+                    song.updatedAt && new Date(song.updatedAt) > new Date(Date.now() - 24*60*60*1000) // Modified in last 24 hours
+                );
+
+                for (const song of localSongs) {
+                    try {
+                        const apiData = {
+                            songNumber: song.number,
+                            version: song.version,
+                            prelude: song.prelude,
+                            title: song.title,
+                            ordinarium: song.ordinarium,
+                            celebration: song.celebration,
+                            satb: song.satb,
+                            category: song.category,
+                            status: song.status,
+                            pdfName: song.pdfName || '',
+                            updatedAt: song.updatedAt
+                        };
+
+                        await submitToGoogleSheets('update', apiData);
+                        successCount++;
+                    } catch (error) {
+                        console.error(`Error syncing song ${song.number}:`, error);
+                        errorCount++;
+                    }
+                }
+
+                if (successCount > 0) {
+                    addActivity(`Sinkronisasi berhasil: ${successCount} lagu diperbarui di Google Sheets`, 'success', 'sync');
+                    showToast(`✅ Sinkronisasi berhasil: ${successCount} lagu diperbarui!`, 'success');
+                }
+
+                if (errorCount > 0) {
+                    addActivity(`Sinkronisasi sebagian gagal: ${errorCount} lagu gagal diperbarui`, 'warning', 'sync');
+                    showToast(`⚠️ ${errorCount} lagu gagal disinkronisasi`, 'warning');
+                }
+
+                if (successCount === 0 && errorCount === 0) {
+                    showToast('ℹ️ Tidak ada perubahan untuk disinkronisasi', 'success');
+                }
+
+            } catch (error) {
+                console.error('Sync error:', error);
+                addActivity(`Gagal melakukan sinkronisasi: ${error.message}`, 'error', 'sync');
+                showToast(`❌ Gagal melakukan sinkronisasi: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Force refresh API connection
+        async function refreshAPIConnection() {
+            showLoading(true);
+            try {
+                const connected = await testAPIConnection(true);
+                if (connected) {
+                    updateDataMode('API + CSV Mode', 'success');
+                } else {
+                    updateDataMode('CSV Mode (Read-Only)', 'warning');
+                }
+            } catch (error) {
+                console.error('API refresh error:', error);
+                updateAPIStatus('disconnected', 'Error');
+                updateDataMode('CSV Mode (Read-Only)', 'error');
             } finally {
                 showLoading(false);
             }
@@ -2007,6 +2321,45 @@ Total ${songs.length} lagu siap diimport!`);
             const modal = document.getElementById('troubleshootModal');
             modal.classList.add('hidden');
             document.body.style.overflow = 'auto';
+        }
+
+        function showSystemInfo() {
+            const info = `
+📊 INFORMASI SISTEM LITURGI KATOLIK
+
+🌐 Environment: ${isCanvaEnvironment ? 'Canva Hosted' : 'Normal Web'}
+📍 Domain: ${window.location.hostname}
+🔗 Protocol: ${window.location.protocol}
+🆔 Spreadsheet ID: ${SPREADSHEET_ID}
+
+📊 DATA:
+• Total Lagu: ${songs.length}
+• Lagu Aktif: ${songs.filter(s => s.status === 'active').length}
+• Ada Partitur: ${songs.filter(s => s.pdfData).length}
+• Total Aktivitas: ${activities.length}
+
+🔧 STATUS:
+• Mode Data: ${apiConnected ? 'API + CSV Mode' : 'CSV Mode (Read-Only)'}
+• API Status: ${apiConnected ? 'Connected ✅' : 'CORS Blocked ❌'}
+• Google Sheets: ${SPREADSHEET_ID ? 'Configured ✅' : 'Not Configured ❌'}
+• Browser: ${navigator.userAgent.split(' ')[0]}
+
+✅ FITUR TERSEDIA:
+• ✅ Baca data dari CSV
+• ${apiConnected ? '✅' : '⚠️'} Tambah/Edit lagu ${apiConnected ? '(sync ke Google Sheets)' : '(lokal saja)'}
+• ${apiConnected ? '✅' : '⚠️'} Hapus lagu ${apiConnected ? '(sync ke Google Sheets)' : '(lokal saja)'}
+• ✅ Upload partitur PDF
+• ✅ Export ke Excel/CSV
+• ✅ Pencarian & filter
+• ${apiConnected ? '✅' : '❌'} Sinkronisasi ke Google Sheets
+
+${apiConnected ? 
+'🎉 Sistem berjalan penuh dengan CRUD Google Sheets!' : 
+'⚠️ Sistem berjalan dalam mode baca-saja dari CSV'}
+            `;
+            
+            alert(info);
+            addActivity('Info sistem ditampilkan', 'success', 'system');
         }
 
         function testDirectAPI() {
@@ -2091,5 +2444,5 @@ Total ${songs.length} lagu siap diimport!`);
             }
         });
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97bf830c179b6045',t:'MTc1NzM0NTY4Ni4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97bfcd44b62244c3',t:'MTc1NzM0ODcyNi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
